@@ -1,7 +1,7 @@
 import os
 import requests
 import shutil
-from flask import Flask, request, send_from_directory, render_template_string
+from flask import Flask, request, send_file, Response, render_template_string
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
@@ -43,26 +43,36 @@ def proxy():
         return "<h1>エラー: URLはhttp://またはhttps://で始まる必要があります。</h1>", 400
 
     try:
-        # HTMLを取得
-        response = requests.get(target_url)
+        # リソースの取得
+        response = requests.get(target_url, stream=True)
         response.raise_for_status()
-        html = response.text  # HTMLデータ（テキスト）
 
-        # BeautifulSoupでHTML解析
-        soup = BeautifulSoup(html, "html.parser")
+        content_type = response.headers.get("Content-Type", "")
+        if "text/html" in content_type:  # HTMLの場合
+            html = response.text
+            soup = BeautifulSoup(html, "html.parser")
 
-        # リソースのダウンロードとパス修正
-        for tag in soup.find_all(["img", "link", "script"]):
-            attr = "href" if tag.name in ["link"] else "src"
-            if tag.has_attr(attr):
-                resource_url = urljoin(target_url, tag[attr])
-                resource_path = download_resource(resource_url)
-                if resource_path:
-                    # パスを修正
-                    tag[attr] = f"/static/{resource_path}"
+            # リソースのダウンロードとパス修正
+            for tag in soup.find_all(["img", "link", "script"]):
+                attr = "href" if tag.name in ["link"] else "src"
+                if tag.has_attr(attr):
+                    resource_url = urljoin(target_url, tag[attr])
+                    resource_path = download_resource(resource_url)
+                    if resource_path:
+                        tag[attr] = f"/static/{resource_path}"
 
-        # 修正済みHTMLを返す
-        return str(soup)
+            return str(soup)
+
+        else:  # バイナリリソースの場合
+            filename = os.path.basename(urlparse(target_url).path)
+            if not filename:
+                filename = "downloaded_file"
+
+            file_path = os.path.join(TEMP_DIR, filename)
+            with open(file_path, "wb") as f:
+                shutil.copyfileobj(response.raw, f)
+
+            return send_file(file_path, mimetype=content_type)
 
     except Exception as e:
         return f"<h1>エラーが発生しました。</h1><p>{str(e)}</p>", 500
@@ -95,8 +105,7 @@ def download_resource(url):
 @app.route("/static/tmp/<path:filename>", methods=["GET"])
 def serve_tmp_file(filename):
     """一時ディレクトリ内のファイルを提供"""
-    return send_from_directory(TEMP_DIR, filename)
+    return send_file(os.path.join(TEMP_DIR, filename))
 
 if __name__ == "__main__":
     app.run(debug=True)
-
