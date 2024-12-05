@@ -1,5 +1,7 @@
 import subprocess
 from flask import Flask, request, render_template_string
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 app = Flask(__name__)
 
@@ -26,7 +28,7 @@ def home():
     """
     return render_template_string(html_form)
 
-# /proxy エンドポイント (HTML取得・実行)
+# /proxy エンドポイント (HTML取得・相対パス修正)
 @app.route("/proxy", methods=["GET"])
 def proxy():
     # URLパラメータを取得
@@ -47,8 +49,17 @@ def proxy():
 
         html = result.stdout
 
-        # 取得したHTMLを直接返す
-        return html
+        # BeautifulSoupでHTML解析
+        soup = BeautifulSoup(html, "html.parser")
+
+        # すべての相対URLを絶対URLに変換
+        for tag in soup.find_all(["a", "img", "link", "script"]):
+            attr = "href" if tag.name in ["a", "link"] else "src"
+            if tag.has_attr(attr):
+                tag[attr] = urljoin(target_url, tag[attr])
+
+        # 修正済みHTMLを返す
+        return str(soup)
 
     except Exception as e:
         return f"<h1>サーバー側でエラーが発生しました。</h1><p>{str(e)}</p>", 500
