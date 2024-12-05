@@ -1,11 +1,16 @@
-import subprocess
-from flask import Flask, request, render_template_string
+import os
+import requests
+import shutil
+from flask import Flask, request, send_from_directory, render_template_string
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 app = Flask(__name__)
 
-# /home エンドポイント (URL入力フォーム)
+# 一時ディレクトリの作成
+TEMP_DIR = "./tmp"
+os.makedirs(TEMP_DIR, exist_ok=True)
+
 @app.route("/home", methods=["GET"])
 def home():
     html_form = """
@@ -28,10 +33,8 @@ def home():
     """
     return render_template_string(html_form)
 
-# /proxy エンドポイント (HTML取得・相対パス修正)
 @app.route("/proxy", methods=["GET"])
 def proxy():
-    # URLパラメータを取得
     target_url = request.args.get("url")
     if not target_url:
         return "<h1>エラー: URLパラメータが必要です。</h1>", 400
@@ -40,29 +43,60 @@ def proxy():
         return "<h1>エラー: URLはhttp://またはhttps://で始まる必要があります。</h1>", 400
 
     try:
-        # curlコマンドでHTMLを取得
-        curl_command = f"curl -s {target_url}"
-        result = subprocess.run(curl_command, shell=True, text=True, capture_output=True)
-
-        if result.returncode != 0:
-            return f"<h1>エラー: curlコマンドでエラーが発生しました。</h1><p>{result.stderr}</p>", 500
-
-        html = result.stdout
+        # HTMLを取得
+        response = requests.get(target_url)
+        response.raise_for_status()
+        html = response.text  # HTMLデータ（テキスト）
 
         # BeautifulSoupでHTML解析
         soup = BeautifulSoup(html, "html.parser")
 
-        # すべての相対URLを絶対URLに変換
-        for tag in soup.find_all(["a", "img", "link", "script"]):
-            attr = "href" if tag.name in ["a", "link"] else "src"
+        # リソースのダウンロードとパス修正
+        for tag in soup.find_all(["img", "link", "script"]):
+            attr = "href" if tag.name in ["link"] else "src"
             if tag.has_attr(attr):
-                tag[attr] = urljoin(target_url, tag[attr])
+                resource_url = urljoin(target_url, tag[attr])
+                resource_path = download_resource(resource_url)
+                if resource_path:
+                    # パスを修正
+                    tag[attr] = f"/static/{resource_path}"
 
         # 修正済みHTMLを返す
         return str(soup)
 
     except Exception as e:
-        return f"<h1>サーバー側でエラーが発生しました。</h1><p>{str(e)}</p>", 500
+        return f"<h1>エラーが発生しました。</h1><p>{str(e)}</p>", 500
+
+def download_resource(url):
+    """指定されたURLのリソースをダウンロードし、一時ディレクトリに保存する"""
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+
+        # ファイル名を決定
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path)
+        if not filename:
+            filename = "index.html"
+
+        # ファイルパスを設定
+        file_path = os.path.join(TEMP_DIR, filename)
+
+        # バイナリデータを保存
+        with open(file_path, "wb") as f:
+            shutil.copyfileobj(response.raw, f)
+
+        return f"tmp/{filename}"
+
+    except Exception as e:
+        print(f"リソースのダウンロードに失敗しました: {e}")
+        return None
+
+@app.route("/static/tmp/<path:filename>", methods=["GET"])
+def serve_tmp_file(filename):
+    """一時ディレクトリ内のファイルを提供"""
+    return send_from_directory(TEMP_DIR, filename)
 
 if __name__ == "__main__":
     app.run(debug=True)
+
