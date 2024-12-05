@@ -1,11 +1,35 @@
 import subprocess
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
 
-@app.route("/", methods=["GET"])
+# /home エンドポイント (URL入力フォーム)
+@app.route("/home", methods=["GET"])
+def home():
+    html_form = """
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Proxy Input</title>
+    </head>
+    <body>
+      <h1>URLを入力してください</h1>
+      <form action="/proxy" method="get">
+        <label for="url">URL:</label>
+        <input type="text" id="url" name="url" placeholder="https://example.com" required>
+        <button type="submit">送信</button>
+      </form>
+    </body>
+    </html>
+    """
+    return render_template_string(html_form)
+
+# /proxy エンドポイント (HTML取得API)
+@app.route("/proxy", methods=["GET"])
 def proxy():
-    # URLを取得
+    # URLパラメータを取得
     target_url = request.args.get("url")
     if not target_url:
         return jsonify({"error": "URLパラメータが必要です"}), 400
