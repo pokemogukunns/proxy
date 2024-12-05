@@ -1,5 +1,5 @@
 import subprocess
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, render_template_string
 
 app = Flask(__name__)
 
@@ -26,16 +26,16 @@ def home():
     """
     return render_template_string(html_form)
 
-# /proxy エンドポイント (HTML取得API)
+# /proxy エンドポイント (HTML取得・実行)
 @app.route("/proxy", methods=["GET"])
 def proxy():
     # URLパラメータを取得
     target_url = request.args.get("url")
     if not target_url:
-        return jsonify({"error": "URLパラメータが必要です"}), 400
+        return "<h1>エラー: URLパラメータが必要です。</h1>", 400
 
     if not target_url.startswith("http://") and not target_url.startswith("https://"):
-        return jsonify({"error": "URLはhttp://またはhttps://で始まる必要があります"}), 400
+        return "<h1>エラー: URLはhttp://またはhttps://で始まる必要があります。</h1>", 400
 
     try:
         # curlコマンドでHTMLを取得
@@ -43,13 +43,15 @@ def proxy():
         result = subprocess.run(curl_command, shell=True, text=True, capture_output=True)
 
         if result.returncode != 0:
-            return jsonify({"error": "curlコマンドでエラーが発生しました", "details": result.stderr}), 500
+            return f"<h1>エラー: curlコマンドでエラーが発生しました。</h1><p>{result.stderr}</p>", 500
 
         html = result.stdout
-        return jsonify({"html": html})
+
+        # 取得したHTMLを直接返す
+        return html
 
     except Exception as e:
-        return jsonify({"error": "サーバー側でエラーが発生しました", "details": str(e)}), 500
+        return f"<h1>サーバー側でエラーが発生しました。</h1><p>{str(e)}</p>", 500
 
 if __name__ == "__main__":
     app.run(debug=True)
