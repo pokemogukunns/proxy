@@ -7,9 +7,8 @@ from urllib.parse import urljoin, urlparse
 
 app = Flask(__name__)
 
-# 一時ディレクトリの作成
-TEMP_DIR = "./tmp"
-os.makedirs(TEMP_DIR, exist_ok=True)
+# 一時ディレクトリの設定 (Vercel用に /tmp を使用)
+TEMP_DIR = "/tmp"
 
 @app.route("/home", methods=["GET"])
 def home():
@@ -59,7 +58,7 @@ def proxy():
                     resource_url = urljoin(target_url, tag[attr])
                     resource_path = download_resource(resource_url)
                     if resource_path:
-                        tag[attr] = f"/static/{resource_path}"
+                        tag[attr] = f"/static/tmp/{os.path.basename(resource_path)}"
 
             return str(soup)
 
@@ -96,7 +95,7 @@ def download_resource(url):
         with open(file_path, "wb") as f:
             shutil.copyfileobj(response.raw, f)
 
-        return f"tmp/{filename}"
+        return file_path
 
     except Exception as e:
         print(f"リソースのダウンロードに失敗しました: {e}")
